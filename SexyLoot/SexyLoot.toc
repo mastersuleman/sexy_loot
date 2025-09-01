@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: |cffff69b4SexyLoot|r
+## Notes: |cffff80ffCustomizable loot notifications with style|r
+## Notes-ruRU: |cffff80ffСтильные уведомления о добыче с настройками|r
+## Version: 3.0
+## Author: Namelus (based on prettylootalert by s0high)
+## SavedVariables: SexyLootDB
+
+SexyLoot.xml
