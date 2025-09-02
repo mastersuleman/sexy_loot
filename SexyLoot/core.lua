@@ -555,44 +555,123 @@ function LootAlertFrame_OnEvent(self, event, ...)
 	-- Mail tracking - track items as they're taken from mail
 	if event == "MAIL_INBOX_UPDATE" then
 		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.mail == false then return; end
-		-- Set flag that we're at the mailbox
-		self.atMailbox = true;
+		-- Set flag that we're at the mailbox and take snapshot
+		if not self.atMailbox then
+			self.atMailbox = true;
+			-- Take a snapshot of current bag contents when we open mail
+			self.mailSnapshot = {};
+			for bag = 0, 4 do
+				self.mailSnapshot[bag] = {};
+				for slot = 1, GetContainerNumSlots(bag) do
+					local link = GetContainerItemLink(bag, slot);
+					if link then
+						local _, count = GetContainerItemInfo(bag, slot);
+						local itemID = link:match("item:(%d+)");
+						if itemID then
+							self.mailSnapshot[bag][slot] = {
+								link = link,
+								count = count or 1,
+								itemID = itemID
+							};
+						end
+					end
+				end
+			end
+		end
 	end
 	
 	if event == "MAIL_CLOSED" then
-		-- Clear mailbox flag
+		-- Clear mailbox flag and snapshot
 		self.atMailbox = false;
+		self.mailSnapshot = nil;
 	end
 	
-	-- Track bag updates while at mailbox
-	if event == "BAG_UPDATE" and self.atMailbox then
+	-- Track bag updates while at mailbox - FIXED VERSION
+	if event == "BAG_UPDATE" and self.atMailbox and self.mailSnapshot then
 		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.mail == false then return; end
 		
 		local bag = arg1;
-		-- Only check the bag that changed
+		
+		-- Check each slot in the updated bag
 		for slot = 1, GetContainerNumSlots(bag) do
 			local link = GetContainerItemLink(bag, slot);
 			if link then
 				local _, count = GetContainerItemInfo(bag, slot);
-				-- Check if this is a new item (compare to previous inventory state)
-				if not self.previousBags[bag] then
-					self.previousBags[bag] = {};
-				end
+				local itemID = link:match("item:(%d+)");
+				count = count or 1;
 				
-				if not self.previousBags[bag][slot] then
-					-- New item in this slot
-					local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link);
-					if name then
-						local label = "Mail:";
-						local toast = quality >= LE_ITEM_QUALITY_EPIC and "heroictoast" or "defaulttoast";
-						LootAlertFrameMixIn:AddAlert(name, link, quality, texture, count, false, label, toast);
+				if itemID then
+					local wasInSnapshot = false;
+					local oldCount = 0;
+					
+					-- Check if this exact slot had this item in snapshot
+					if self.mailSnapshot[bag] and self.mailSnapshot[bag][slot] then
+						local snapshotData = self.mailSnapshot[bag][slot];
+						if snapshotData.itemID == itemID then
+							wasInSnapshot = true;
+							oldCount = snapshotData.count;
+						end
+					end
+					
+					-- If item wasn't in this slot, or count increased, it might be from mail
+					if not wasInSnapshot then
+						-- New item in this slot - check if it exists elsewhere in snapshot
+						local foundElsewhere = false;
+						for snapBag = 0, 4 do
+							if self.mailSnapshot[snapBag] then
+								for snapSlot = 1, GetContainerNumSlots(snapBag) do
+									if self.mailSnapshot[snapBag][snapSlot] and 
+									   self.mailSnapshot[snapBag][snapSlot].itemID == itemID then
+										foundElsewhere = true;
+										break;
+									end
+								end
+							end
+							if foundElsewhere then break; end
+						end
+						
+						-- If it's truly new (not found anywhere in snapshot), it's from mail
+						if not foundElsewhere then
+							local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link);
+							if name then
+								local label = "Mail:";
+								local toast = quality >= LE_ITEM_QUALITY_EPIC and "heroictoast" or "defaulttoast";
+								LootAlertFrameMixIn:AddAlert(name, link, quality, texture, count, false, label, toast);
+							end
+						end
+					elseif count > oldCount then
+						-- Same item, but count increased - show the difference
+						local addedCount = count - oldCount;
+						local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link);
+						if name then
+							local label = "Mail:";
+							local toast = quality >= LE_ITEM_QUALITY_EPIC and "heroictoast" or "defaulttoast";
+							LootAlertFrameMixIn:AddAlert(name, link, quality, texture, addedCount, false, label, toast);
+						end
 					end
 				end
-				self.previousBags[bag][slot] = link;
-			else
-				if self.previousBags[bag] then
-					self.previousBags[bag][slot] = nil;
+			end
+		end
+		
+		-- Update the snapshot for this bag
+		if not self.mailSnapshot[bag] then
+			self.mailSnapshot[bag] = {};
+		end
+		
+		for slot = 1, GetContainerNumSlots(bag) do
+			local link = GetContainerItemLink(bag, slot);
+			if link then
+				local _, count = GetContainerItemInfo(bag, slot);
+				local itemID = link:match("item:(%d+)");
+				if itemID then
+					self.mailSnapshot[bag][slot] = {
+						link = link,
+						count = count or 1,
+						itemID = itemID
+					};
 				end
+			else
+				self.mailSnapshot[bag][slot] = nil;
 			end
 		end
 	end
