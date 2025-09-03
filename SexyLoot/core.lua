@@ -12,7 +12,6 @@ local tostring = tostring;
 local format = string.format;
 local match = string.match;
 local gsub = string.gsub;
-local sub = string.sub;
 local tRemove = table.remove;
 local tInsert = table.insert;
 local tWipe = table.wipe;
@@ -28,36 +27,20 @@ local point_x = config.point_x;
 local point_y = config.point_y;
 local ignlevel = config.ignore_level;
 local uptime = config.time;
-local looting = config.looting;
-local creating = config.creating;
-local rolling =	config.rolling;
-local currency_loot = config.money;
-local recipes_learned = config.recipes;
-local honor_award = config.honor;
-local quality_low = config.low_level;
-local quality_max = config.max_level;
 
 local LOOTALERT_NUM_BUTTONS = config.numbuttons;
 
 -- /* api's */
 local UnitName = UnitName;
-local UnitLevel = UnitLevel;
 local UnitFactionGroup = UnitFactionGroup;
 local PlaySoundFile = PlaySoundFile;
-local PlaySound = PlaySound;
-local GetSpellInfo = GetSpellInfo;
 local GetItemInfo = GetItemInfo;
 local GetUnitName = GetUnitName;
-local GetBattlefieldScore = GetBattlefieldScore;
-local GetNumBattlefieldScores = GetNumBattlefieldScores;
-local GetBattlefieldWinner = GetBattlefieldWinner;
 local GetMoneyString = GetMoneyString;
 local GetMoney = GetMoney;
 local GameTooltip = GameTooltip;
 local playerFaction = UnitFactionGroup("player");
-local playerWinner = PLAYER_FACTION_GROUP[playerFaction];
 local playerName = UnitName("player");
-local GetAmountBattlefieldBonus = private.GetAmountBattlefieldBonus;
 
 -- /* assets */
 local assets = [[Interface\AddOns\SexyLoot\assets\]];
@@ -67,7 +50,7 @@ local SOUNDKIT = {
 	UI_GARRISON_FOLLOWER_LEARN_TRAIT = assets.."ui_garrison_follower_trait_learned_02.ogg",
 	UI_LEGENDARY_LOOT_TOAST = assets.."ui_legendary_item_toast.ogg",
 	UI_RAID_LOOT_TOAST_LESSER_ITEM_WON = assets.."ui_loot_toast_lesser_item_won_01.ogg",
-	COIN_SOUND = assets.."coinsound.ogg", -- Your custom coin sound file
+	COIN_SOUND = assets.."coinsound.ogg",
 };
 
 -- /* consts */
@@ -78,7 +61,6 @@ local LE_ITEM_QUALITY_LEGENDARY = 5;
 local LE_ITEM_QUALITY_POOR = 0;
 local LE_ITEM_QUALITY_RARE = 3;
 local LE_ITEM_QUALITY_UNCOMMON = 2;
-local LE_ITEM_QUALITY_WOW_TOKEN = 8;
 local LE_ITEM_QUALITY_ARTIFACT = 6;
 
 local LOOT_ROLL_TYPE_NEED = 1;
@@ -93,12 +75,6 @@ local LOOT_BORDER_BY_QUALITY = {
 	[LE_ITEM_QUALITY_HEIRLOOM] = {0.34082, 0.397461, 0.648438, 0.761719},
 	[LE_ITEM_QUALITY_ARTIFACT] = {0.272461, 0.329102, 0.667969, 0.78125},
 };
-local HONOR_BACKGROUND_TCOORDS = {
-	["Alliance"] = {277, 113, 0.001953, 0.542969, 0.460938, 0.902344},
-	["Horde"] = {281, 115, 0.001953, 0.550781, 0.003906, 0.453125},
-};
-local SUB_COORDS = HONOR_BACKGROUND_TCOORDS[playerFaction];
-local HONOR_BADGE = {SUB_COORDS[3], SUB_COORDS[4], SUB_COORDS[5], SUB_COORDS[6]};
 
 local PROFESSION_ICON_TCOORDS = {
 	[TOAST_PROFESSION_ENCHANTING]		= {0, 0.25, 0, 0.25},
@@ -132,13 +108,6 @@ local previousMoney = 0;
 local moneyUpdateTimer = 0;
 local MONEY_UPDATE_DELAY = 0.5;
 
--- Trade tracking
-local tradeItems = {};
-local tradeMoney = 0;
-
--- Mail tracking  
-local mailItems = {};
-
 local expectations_list = {};
 local patterns = {
 	won = {
@@ -167,7 +136,7 @@ local prefix_table = {
 };
 
 -- /* tables */
-LootAlertFrameMixIn = {};  -- Make it global so options.lua can access it
+LootAlertFrameMixIn = {};
 LootAlertFrameMixIn.alertQueue = {};
 LootAlertFrameMixIn.alertButton = {};
 
@@ -319,7 +288,6 @@ function LootAlertFrame_OnLoad(self)
 	self.updateTime = uptime;
 	self.moneyUpdateTimer = 0;
 	self.atMailbox = false;
-	self.previousBags = {};
 	
 	-- Initialize saved variables
 	SexyLootDB = SexyLootDB or {};
@@ -333,25 +301,11 @@ function LootAlertFrame_OnLoad(self)
 	-- Store initial money
 	previousMoney = GetMoney();
 	
-	-- Initialize bag state
-	for bag = 0, 4 do
-		self.previousBags[bag] = {};
-		for slot = 1, GetContainerNumSlots(bag) do
-			local link = GetContainerItemLink(bag, slot);
-			if link then
-				self.previousBags[bag][slot] = link;
-			end
-		end
-	end
-	
 	self:RegisterEvent("CHAT_MSG_LOOT");
 	self:RegisterEvent("CHAT_MSG_SYSTEM");
 	self:RegisterEvent("CHAT_MSG_MONEY");
-	self:RegisterEvent("UPDATE_BATTLEFIELD_STATUS");
 	self:RegisterEvent("PLAYER_MONEY");
 	self:RegisterEvent("TRADE_ACCEPT_UPDATE");
-	self:RegisterEvent("TRADE_CLOSED");
-	self:RegisterEvent("TRADE_MONEY_CHANGED");
 	self:RegisterEvent("MAIL_INBOX_UPDATE");
 	self:RegisterEvent("MAIL_CLOSED");
 	self:RegisterEvent("MAIL_SHOW");
@@ -455,6 +409,8 @@ function LootAlertFrame_OnEvent(self, event, ...)
 
 		if itemName then
 			local name, link, quality, iLevel, _, itemType, subType, _, _, texture = GetItemInfo(itemName);
+			if not name then return; end
+			
 			local legendary	  = quality == LE_ITEM_QUALITY_LEGENDARY;
 			local average	  = quality >= LE_ITEM_QUALITY_UNCOMMON and not legendary;
 			local common	  = quality <= LE_ITEM_QUALITY_COMMON;
@@ -526,11 +482,15 @@ function LootAlertFrame_OnEvent(self, event, ...)
 	-- Recipe learning
 	if event == "CHAT_MSG_SYSTEM" then
 		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.recipes == false then return; end
+		if not arg1 or arg1 == "" then return; end
 		
-		local skill = arg1:match(PATTERN_LEARN);
+		local skill;
+		local success;
+		success, skill = pcall(string.match, arg1, PATTERN_LEARN);
+		
 		if skill then
 			for prof, prefixes in next, prefix_table do
-				if GetSpellInfo(prof) then
+				if GetSpellInfo and GetSpellInfo(prof) then
 					for key, prefix in next, prefixes do
 						local recipe = prefix .. skill or skill;
 						local label = NEW_RECIPE_LEARNED_TITLE;
@@ -543,45 +503,6 @@ function LootAlertFrame_OnEvent(self, event, ...)
 					end
 				end
 			end
-		end
-	end
-
-	-- Honor/battlefield rewards
-	if event == "UPDATE_BATTLEFIELD_STATUS" and honor_award then
-		if (not GetBattlefieldWinner() or BATTLEFIELD_SHUTDOWN_TIMER <= 0 or IsActiveBattlefieldArena()) then return; end
-		local link, entry, count, texture, quality, label, toast, tip;
-		local honorIcon = assets.."PVPCurrency-Honor-"..playerFaction;
-		local bonusIcon = assets.."achievement_legionpvptier4";
-		local numScores = GetNumBattlefieldScores();
-		local hasWon, winHonorAmount, winArenaAmount = GetAmountBattlefieldBonus();
-		
-		RequestBattlefieldScoreData();
-		for i=1, numScores do
-			local name, _, _, _, honorGained = GetBattlefieldScore(i);
-			if name and name == playerName then
-				link 	 	= "item:43308";
-				entry 	  	= HONOR_POINTS;
-				count	 	= honorGained;
-				texture   	= honorIcon;
-				quality   	= LE_ITEM_QUALITY_ARTIFACT;
-				label 	  	= YOU_EARNED_LABEL;
-				toast 		= "battlefieldtoast";
-				tip 	  	= TOOLTIP_HONOR_POINTS;
-				break;
-			end
-		end
-		
-		if link then
-			LootAlertFrameMixIn:AddAlert(entry, link, quality, texture, count, true, label, toast, false, false, tip);
-		end
-		if not hasWon and GetBattlefieldWinner() == playerWinner then
-			link	  	= "item:43307";
-			entry	  	= ARENA_POINTS;
-			count	  	= winArenaAmount;
-			texture	  	= bonusIcon;
-			tip 	  	= TOOLTIP_ARENA_POINTS;
-			
-			LootAlertFrameMixIn:AddAlert(entry, link, quality, texture, count, true, label, toast, false, false, tip);
 		end
 	end
 	
@@ -654,7 +575,7 @@ function LootAlertFrame_OnEvent(self, event, ...)
 		-- Don't set flag here, let MAIL_INBOX_UPDATE handle it
 	end
 
-	-- Track bag updates while at mailbox - IMPROVED VERSION
+	-- Track bag updates while at mailbox
 	if event == "BAG_UPDATE" and self.atMailbox and self.mailSnapshot then
 		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.mail == false then return; end
 		
@@ -750,7 +671,7 @@ function LootAlertFrame_OnEvent(self, event, ...)
 			end
 		end
 	end
-end -- This closes the LootAlertFrame_OnEvent function
+end
 
 function LootAlertFrame_OnUpdate(self, elapsed)
 	-- Get current update time from config
@@ -796,7 +717,7 @@ function LootAlertFrame_OnUpdate(self, elapsed)
 			alert.animIn:Play();
 			LootAlertFrameMixIn:AdjustAnchors();
 		end
-		self.updateTime = updateSpeed; -- Use the current speed setting
+		self.updateTime = updateSpeed;
 	end
 end
 
@@ -855,7 +776,6 @@ function LootAlertButtonTemplate_OnShow(self)
 	if data.name then
 		local defaultToast 		= data.toast == "defaulttoast";
 		local recipeToast 		= data.toast == "recipetoast";
-		local battlefieldToast  = data.toast == "battlefieldtoast";
 		local moneyToast 		= data.toast == "moneytoast";
 		local legendaryToast 	= data.toast == "legendarytoast";
 		local commonToast 		= data.toast == "commontoast";
@@ -894,9 +814,6 @@ function LootAlertButtonTemplate_OnShow(self)
 		
 		self.Background:SetShown(defaultToast);
 		self.HeroicBackground:SetShown(data.toast == "heroictoast");
-		self.PvPBackground:SetShown(battlefieldToast);
-		self.PvPBackground:SetSize(SUB_COORDS[1], SUB_COORDS[2]);
-		self.PvPBackground:SetTexCoord(unpack(HONOR_BADGE));
 		self.RecipeBackground:SetShown(recipeToast);
 		self.RecipeTitle:SetShown(recipeToast);
 		self.RecipeName:SetShown(recipeToast);
