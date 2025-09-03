@@ -171,6 +171,55 @@ LootAlertFrameMixIn = {};  -- Make it global so options.lua can access it
 LootAlertFrameMixIn.alertQueue = {};
 LootAlertFrameMixIn.alertButton = {};
 
+-- Helper function for container API compatibility
+local function GetContainerNumSlots(bag)
+	if C_Container and C_Container.GetContainerNumSlots then
+		return C_Container.GetContainerNumSlots(bag);
+	else
+		return _G.GetContainerNumSlots(bag);
+	end
+end
+
+local function GetContainerItemLink(bag, slot)
+	if C_Container and C_Container.GetContainerItemLink then
+		return C_Container.GetContainerItemLink(bag, slot);
+	else
+		return _G.GetContainerItemLink(bag, slot);
+	end
+end
+
+local function GetContainerItemInfo(bag, slot)
+	if C_Container and C_Container.GetContainerItemInfo then
+		local itemInfo = C_Container.GetContainerItemInfo(bag, slot);
+		if itemInfo then
+			return itemInfo.iconFileID, itemInfo.stackCount, itemInfo.isLocked, itemInfo.quality, itemInfo.isReadable, itemInfo.hasLoot, itemInfo.hyperlink, itemInfo.isFiltered, itemInfo.hasNoValue, itemInfo.itemID, itemInfo.isBound;
+		end
+		return nil;
+	else
+		return _G.GetContainerItemInfo(bag, slot);
+	end
+end
+
+-- Add test function
+function SexyLoot_TestLoot()
+	print("SexyLoot: Testing loot notification...");
+	if LootAlertFrameMixIn then
+		LootAlertFrameMixIn:AddAlert(
+			"Test Item",
+			"|cff9d9d9d|Hitem:2589::::::::1:254::::::|h[Linen Cloth]|h|r",
+			LE_ITEM_QUALITY_COMMON,
+			"Interface\\Icons\\INV_Fabric_Linen_01",
+			1,
+			false,
+			"Test:",
+			"defaulttoast"
+		);
+		print("SexyLoot: Test notification added to queue");
+	else
+		print("SexyLoot: LootAlertFrameMixIn not found!");
+	end
+end
+
 function LootAlertFrameMixIn:AddAlert(name, link, quality, texture, count, ignore, label, toast, rollType, rollLink, tip, money, subType, isLoss)
 	-- Load saved config and apply quality filter
 	if SexyLootDB and SexyLootDB.config then
@@ -305,19 +354,22 @@ function LootAlertFrame_OnLoad(self)
 	self:RegisterEvent("TRADE_MONEY_CHANGED");
 	self:RegisterEvent("MAIL_INBOX_UPDATE");
 	self:RegisterEvent("MAIL_CLOSED");
+	self:RegisterEvent("MAIL_SHOW");
 	self:RegisterEvent("BAG_UPDATE");
 	self:RegisterEvent("PLAYER_LOGIN");
 
 	mixin(self, LootAlertFrameMixIn);
+	
+	print("SexyLoot: Addon loaded. Use /sexyloot test to test notifications.");
 end
 
 local function LootAlertFrame_HandleChatMessage(message)
 	local link, quantity, rollType, roll;
 
 	if expectations_list.disenchant_result then
-		link, quantity = message:cmatch(LOOT_ITEM_SELF_MULTIPLE);
+		link, quantity = message:match(P_LOOT_ITEM_SELF_MULTIPLE);
 		if not link then
-			link = message:cmatch(LOOT_ITEM_SELF);
+			link = message:match(P_LOOT_ITEM_SELF);
 		end
 		if link and expectations_list[link] then
 			rollType = LOOT_ROLL_TYPE_DISENCHANT;
@@ -328,7 +380,7 @@ local function LootAlertFrame_HandleChatMessage(message)
 		end
 	end
 
-	link = message:cmatch(LOOT_ROLL_YOU_WON)
+	link = message:match(P_LOOT_ROLL_YOU_WON)
 	if link and expectations_list[link] then
 		rollType, roll = expectations_list[link][1], expectations_list[link][2];
 		if rollType == LOOT_ROLL_TYPE_DISENCHANT then
@@ -341,7 +393,7 @@ local function LootAlertFrame_HandleChatMessage(message)
 	end
 
 	for rollType, pattern in pairs(patterns.rolled) do
-		local roll, link, player = message:cmatch(pattern);
+		local roll, link, player = message:match(pattern);
 		if roll and player == playerName then
 			expectations_list[link] = {rollType, roll};
 			return;
@@ -349,7 +401,7 @@ local function LootAlertFrame_HandleChatMessage(message)
 	end
 
 	for rollType, pattern in pairs(patterns.won) do
-		local roll, link = message:cmatch(pattern);
+		local roll, link = message:match(pattern);
 		if roll then
 			return link, 1, rollType, roll;
 		end
@@ -359,6 +411,7 @@ local function LootAlertFrame_HandleChatMessage(message)
 end
 
 function LootAlertFrame_OnEvent(self, event, ...)
+	local arg1, arg2, arg3 = ...;
 	local shouldTrack = SexyLootDB and SexyLootDB.config;
 	
 	if event == "PLAYER_LOGIN" then
@@ -555,40 +608,62 @@ function LootAlertFrame_OnEvent(self, event, ...)
 	-- Mail tracking - track items as they're taken from mail
 	if event == "MAIL_INBOX_UPDATE" then
 		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.mail == false then return; end
-		-- Set flag that we're at the mailbox and take snapshot
-		if not self.atMailbox then
-			self.atMailbox = true;
-			-- Take a snapshot of current bag contents when we open mail
-			self.mailSnapshot = {};
-			for bag = 0, 4 do
-				self.mailSnapshot[bag] = {};
-				for slot = 1, GetContainerNumSlots(bag) do
-					local link = GetContainerItemLink(bag, slot);
-					if link then
-						local _, count = GetContainerItemInfo(bag, slot);
-						local itemID = link:match("item:(%d+)");
-						if itemID then
-							self.mailSnapshot[bag][slot] = {
-								link = link,
-								count = count or 1,
-								itemID = itemID
-							};
+		
+		-- Only set mailbox flag if we can actually interact with mail
+		-- Check if mail frame is open and visible
+		if MailFrame and MailFrame:IsShown() then
+			if not self.atMailbox then
+				self.atMailbox = true;
+				-- Take a snapshot of current bag contents when we open mail
+				self.mailSnapshot = {};
+				for bag = 0, 4 do
+					self.mailSnapshot[bag] = {};
+					for slot = 1, GetContainerNumSlots(bag) do
+						local link = GetContainerItemLink(bag, slot);
+						if link then
+							local _, count = GetContainerItemInfo(bag, slot);
+							local itemID = link:match("item:(%d+)");
+							if itemID then
+								self.mailSnapshot[bag][slot] = {
+									link = link,
+									count = count or 1,
+									itemID = itemID
+								};
+							end
 						end
 					end
 				end
 			end
+		else
+			-- Mail frame is not open, clear the flag
+			self.atMailbox = false;
+			self.mailSnapshot = nil;
 		end
 	end
-	
+
 	if event == "MAIL_CLOSED" then
 		-- Clear mailbox flag and snapshot
 		self.atMailbox = false;
 		self.mailSnapshot = nil;
 	end
-	
-	-- Track bag updates while at mailbox - FIXED VERSION
+
+	-- Also clear the flag when UI is hidden (player moves away, etc.)
+	if event == "MAIL_SHOW" then
+		-- This fires when mail UI is opened
+		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.mail == false then return; end
+		-- Don't set flag here, let MAIL_INBOX_UPDATE handle it
+	end
+
+	-- Track bag updates while at mailbox - IMPROVED VERSION
 	if event == "BAG_UPDATE" and self.atMailbox and self.mailSnapshot then
 		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.mail == false then return; end
+		
+		-- Double-check that we're still at a mailbox
+		if not (MailFrame and MailFrame:IsShown()) then
+			self.atMailbox = false;
+			self.mailSnapshot = nil;
+			return;
+		end
 		
 		local bag = arg1;
 		
@@ -675,7 +750,7 @@ function LootAlertFrame_OnEvent(self, event, ...)
 			end
 		end
 	end
-end
+end -- This closes the LootAlertFrame_OnEvent function
 
 function LootAlertFrame_OnUpdate(self, elapsed)
 	-- Get current update time from config
@@ -979,4 +1054,19 @@ function LootAlertButtonTemplate_OnEnter(self)
 		GameTooltip:SetHyperlink(self.hyperLink);
 	end
 	GameTooltip:Show();
+end
+
+function LootAlertButtonTemplate_OnLeave(self)
+	GameTooltip:Hide();
+end
+
+-- Slash command for testing
+SLASH_SEXYLOOT1 = "/sexyloot";
+SlashCmdList["SEXYLOOT"] = function(msg)
+	if msg == "test" then
+		SexyLoot_TestLoot();
+	else
+		print("SexyLoot Commands:");
+		print("/sexyloot test - Test a loot notification");
+	end
 end
