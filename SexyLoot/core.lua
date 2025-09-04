@@ -544,20 +544,25 @@ function LootAlertFrame_OnEvent(self, event, ...)
 			if not self.atMailbox then
 				self.atMailbox = true;
 				-- Take a snapshot of current bag contents when we open mail
+				-- ONLY track regular inventory bags (0-4), not special bags like keyring
 				self.mailSnapshot = {};
 				for bag = 0, 4 do
-					self.mailSnapshot[bag] = {};
-					for slot = 1, GetContainerNumSlots(bag) do
-						local link = GetContainerItemLink(bag, slot);
-						if link then
-							local _, count = GetContainerItemInfo(bag, slot);
-							local itemID = link:match("item:(%d+)");
-							if itemID then
-								self.mailSnapshot[bag][slot] = {
-									link = link,
-									count = count or 1,
-									itemID = itemID
-								};
+					-- Skip if bag doesn't exist or has no slots
+					local numSlots = GetContainerNumSlots(bag);
+					if numSlots and numSlots > 0 then
+						self.mailSnapshot[bag] = {};
+						for slot = 1, numSlots do
+							local link = GetContainerItemLink(bag, slot);
+							if link then
+								local _, count = GetContainerItemInfo(bag, slot);
+								local itemID = link:match("item:(%d+)");
+								if itemID then
+									self.mailSnapshot[bag][slot] = {
+										link = link,
+										count = count or 1,
+										itemID = itemID
+									};
+								end
 							end
 						end
 					end
@@ -596,8 +601,23 @@ function LootAlertFrame_OnEvent(self, event, ...)
 		
 		local bag = arg1;
 		
+		-- ONLY process regular inventory bags (0-4), skip special bags
+		if bag < 0 or bag > 4 then
+			return;
+		end
+		
+		-- Skip if this bag wasn't in our snapshot (shouldn't happen with 0-4, but safety check)
+		if not self.mailSnapshot[bag] then
+			return;
+		end
+		
 		-- Check each slot in the updated bag
-		for slot = 1, GetContainerNumSlots(bag) do
+		local numSlots = GetContainerNumSlots(bag);
+		if not numSlots or numSlots == 0 then
+			return;
+		end
+		
+		for slot = 1, numSlots do
 			local link = GetContainerItemLink(bag, slot);
 			if link then
 				local _, count = GetContainerItemInfo(bag, slot);
@@ -609,7 +629,7 @@ function LootAlertFrame_OnEvent(self, event, ...)
 					local oldCount = 0;
 					
 					-- Check if this exact slot had this item in snapshot
-					if self.mailSnapshot[bag] and self.mailSnapshot[bag][slot] then
+					if self.mailSnapshot[bag][slot] then
 						local snapshotData = self.mailSnapshot[bag][slot];
 						if snapshotData.itemID == itemID then
 							wasInSnapshot = true;
@@ -623,11 +643,14 @@ function LootAlertFrame_OnEvent(self, event, ...)
 						local foundElsewhere = false;
 						for snapBag = 0, 4 do
 							if self.mailSnapshot[snapBag] then
-								for snapSlot = 1, GetContainerNumSlots(snapBag) do
-									if self.mailSnapshot[snapBag][snapSlot] and 
-									   self.mailSnapshot[snapBag][snapSlot].itemID == itemID then
-										foundElsewhere = true;
-										break;
+								local snapNumSlots = GetContainerNumSlots(snapBag);
+								if snapNumSlots and snapNumSlots > 0 then
+									for snapSlot = 1, snapNumSlots do
+										if self.mailSnapshot[snapBag][snapSlot] and 
+										   self.mailSnapshot[snapBag][snapSlot].itemID == itemID then
+											foundElsewhere = true;
+											break;
+										end
 									end
 								end
 							end
@@ -658,11 +681,7 @@ function LootAlertFrame_OnEvent(self, event, ...)
 		end
 		
 		-- Update the snapshot for this bag
-		if not self.mailSnapshot[bag] then
-			self.mailSnapshot[bag] = {};
-		end
-		
-		for slot = 1, GetContainerNumSlots(bag) do
+		for slot = 1, numSlots do
 			local link = GetContainerItemLink(bag, slot);
 			if link then
 				local _, count = GetContainerItemInfo(bag, slot);
