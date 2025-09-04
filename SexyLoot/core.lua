@@ -321,9 +321,14 @@ local function LootAlertFrame_HandleChatMessage(message)
 	local link, quantity, rollType, roll;
 
 	if expectations_list.disenchant_result then
-		link, quantity = message:match(P_LOOT_ITEM_SELF_MULTIPLE);
-		if not link then
-			link = message:match(P_LOOT_ITEM_SELF);
+		local success1, l1, q1 = pcall(string.match, message, P_LOOT_ITEM_SELF_MULTIPLE);
+		if success1 and l1 then
+			link, quantity = l1, q1;
+		else
+			local success2, l2 = pcall(string.match, message, P_LOOT_ITEM_SELF);
+			if success2 and l2 then
+				link = l2;
+			end
 		end
 		if link and expectations_list[link] then
 			rollType = LOOT_ROLL_TYPE_DISENCHANT;
@@ -334,7 +339,10 @@ local function LootAlertFrame_HandleChatMessage(message)
 		end
 	end
 
-	link = message:match(P_LOOT_ROLL_YOU_WON)
+	local success, l = pcall(string.match, message, P_LOOT_ROLL_YOU_WON);
+	if success and l then
+		link = l;
+	end
 	if link and expectations_list[link] then
 		rollType, roll = expectations_list[link][1], expectations_list[link][2];
 		if rollType == LOOT_ROLL_TYPE_DISENCHANT then
@@ -346,18 +354,18 @@ local function LootAlertFrame_HandleChatMessage(message)
 		end
 	end
 
-	for rollType, pattern in pairs(patterns.rolled) do
-		local roll, link, player = message:match(pattern);
-		if roll and player == playerName then
-			expectations_list[link] = {rollType, roll};
+	for rType, pattern in pairs(patterns.rolled) do
+		local success, r, l, player = pcall(string.match, message, pattern);
+		if success and r and l and player and player == playerName then
+			expectations_list[l] = {rType, r};
 			return;
 		end
 	end
 
-	for rollType, pattern in pairs(patterns.won) do
-		local roll, link = message:match(pattern);
-		if roll then
-			return link, 1, rollType, roll;
+	for rType, pattern in pairs(patterns.won) do
+		local success, r, l = pcall(string.match, message, pattern);
+		if success and r and l then
+			return l, 1, rType, r;
 		end
 	end
   
