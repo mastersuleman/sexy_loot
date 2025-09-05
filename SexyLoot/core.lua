@@ -833,7 +833,7 @@ function LootAlertButtonTemplate_OnShow(self)
 		self.LessItemName:SetText(data.name);
 		self.Label:SetText(data.label);
 		self.Label:SetShown(averageToast);
-		self.RollWon:SetShown(data.rollLink);
+		self.RollWon:SetShown(data.rollNumber);
 		self.MoneyLabel:SetShown(moneyToast);
 		self.MoneyLabel:SetText(data.label);
 		self.Amount:SetShown(moneyToast);
@@ -849,14 +849,14 @@ function LootAlertButtonTemplate_OnShow(self)
 		self.LessItemName:SetShown(commonToast);
 		self.LessIcon:SetShown(commonToast);
 		self.LegendaryBackground:SetShown(legendaryToast);
-		self.RollWonTitle:SetShown(data.rollLink);
+		self.RollWonTitle:SetShown(data.rollNumber);
 		self.MoneyBackground:SetShown(moneyToast);
 		self.MoneyIconBorder:SetShown(moneyToast);
 		self.MoneyIcon:SetShown(moneyToast);
 		self.MountToastBackground:SetShown(data.toast == "mounttoast");
 		self.PetToastBackground:SetShown(data.toast == "pettoast");
 		
-		if data.rollLink then
+		if data.rollNumber then
 			if data.rollType == LOOT_ROLL_TYPE_NEED then
 				self.RollWonTitle:SetTexture([[Interface\Buttons\UI-GroupLoot-Dice-Up]]);
 			elseif data.rollType == LOOT_ROLL_TYPE_GREED then
@@ -864,7 +864,7 @@ function LootAlertButtonTemplate_OnShow(self)
 			else
 				self.RollWonTitle:Hide();
 			end
-			self.RollWon:SetText(data.rollLink);
+			self.RollWon:SetText("(" .. data.rollNumber .. ")");
 		end
 
 		if recipeToast then
