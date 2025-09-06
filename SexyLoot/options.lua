@@ -117,7 +117,7 @@ local generalY = -20;
 
 -- Test preview button (temporary for debugging)
 local previewTestButton = CreateFrame("Button", nil, tabContent[1], "UIPanelButtonTemplate");
-previewTestButton:SetPoint("TOPLEFT", 20, generalY - 40);
+previewTestButton:SetPoint("TOPLEFT", 350, generalY - 80);
 previewTestButton:SetSize(120, 22);
 previewTestButton:SetText("Toggle Preview");
 previewTestButton:SetScript("OnClick", function()
