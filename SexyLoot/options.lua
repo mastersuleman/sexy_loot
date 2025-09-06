@@ -115,6 +115,23 @@ tabContent[1]:SetAllPoints();
 
 local generalY = -20;
 
+-- Test preview button (temporary for debugging)
+local previewTestButton = CreateFrame("Button", nil, tabContent[1], "UIPanelButtonTemplate");
+previewTestButton:SetPoint("TOPLEFT", 20, generalY - 40);
+previewTestButton:SetSize(120, 22);
+previewTestButton:SetText("Toggle Preview");
+previewTestButton:SetScript("OnClick", function()
+	if not SexyLootDB then SexyLootDB = {}; end
+	SexyLootDB.locked = not SexyLootDB.locked;
+	print("TEST BUTTON: locked =", SexyLootDB.locked);
+	if UpdatePreviewFrame then
+		print("TEST BUTTON: Calling UpdatePreviewFrame");
+		UpdatePreviewFrame();
+	else
+		print("TEST BUTTON: UpdatePreviewFrame not found");
+	end
+end);
+
 -- Lock/Unlock checkbox
 local lockCheck = CreateFrame("CheckButton", "SexyLootLockCheck", tabContent[1], "UICheckButtonTemplate");
 lockCheck:SetPoint("TOPLEFT", 20, generalY);
