@@ -4,6 +4,13 @@
 
 local _, private = ...;
 
+-- Define UpdatePreviewFrame to prevent errors (simple stub)
+function UpdatePreviewFrame()
+	if SexyLoot_UpdatePreviewFrame then
+		SexyLoot_UpdatePreviewFrame();
+	end
+end
+
 -- Create the main options frame
 local optionsFrame = CreateFrame("Frame", "SexyLootOptionsFrame", UIParent);
 optionsFrame:SetSize(600, 500);
@@ -108,6 +115,23 @@ tabContent[1]:SetAllPoints();
 
 local generalY = -20;
 
+-- Test preview button (temporary for debugging)
+local previewTestButton = CreateFrame("Button", nil, tabContent[1], "UIPanelButtonTemplate");
+previewTestButton:SetPoint("TOPLEFT", 350, generalY - 80);
+previewTestButton:SetSize(120, 22);
+previewTestButton:SetText("Toggle Preview");
+previewTestButton:SetScript("OnClick", function()
+	if not SexyLootDB then SexyLootDB = {}; end
+	SexyLootDB.locked = not SexyLootDB.locked;
+	print("TEST BUTTON: locked =", SexyLootDB.locked);
+	if UpdatePreviewFrame then
+		print("TEST BUTTON: Calling UpdatePreviewFrame");
+		UpdatePreviewFrame();
+	else
+		print("TEST BUTTON: UpdatePreviewFrame not found");
+	end
+end);
+
 -- Lock/Unlock checkbox
 local lockCheck = CreateFrame("CheckButton", "SexyLootLockCheck", tabContent[1], "UICheckButtonTemplate");
 lockCheck:SetPoint("TOPLEFT", 20, generalY);
@@ -118,7 +142,12 @@ lockCheck:SetScript("OnClick", function(self)
 		print("|cffff69b4SexyLoot:|r Frames locked");
 	else
 		print("|cffff69b4SexyLoot:|r Frames unlocked - drag to reposition");
-		SexyLoot_ShowTestAlerts();
+	end
+	-- Update preview frame visibility
+	if SexyLoot_UpdatePreviewFrame then
+		SexyLoot_UpdatePreviewFrame();
+	else
+		print("SexyLoot Debug: Preview function not available from checkbox");
 	end
 end);
 
@@ -145,6 +174,8 @@ resetButton:SetScript("OnClick", function()
 	if LootAlertFrameMixIn then
 		LootAlertFrameMixIn:AdjustAnchors();
 	end
+	-- Update preview frame position
+	SexyLoot_UpdatePreviewFrame();
 end);
 
 generalY = generalY - 40;
@@ -272,6 +303,8 @@ scaleSlider:SetScript("OnValueChanged", function(self, value)
 	SexyLootDB.config = SexyLootDB.config or {};
 	SexyLootDB.config.scale = value;
 	_G[self:GetName().."Text"]:SetText(string.format("Alert Scale: %.2f", value));
+	-- Update preview frame scale if visible
+	UpdatePreviewFrame();
 end);
 
 displayY = displayY - 60;
@@ -429,6 +462,11 @@ _G[minQualitySlider:GetName().."Text"]:SetText("Minimum Quality to Show");
 _G[minQualitySlider:GetName().."Low"]:SetText("Poor");
 _G[minQualitySlider:GetName().."High"]:SetText("Legendary");
 minQualitySlider:SetScript("OnValueChanged", function(self, value)
+	-- Don't do anything if this is being called during initialization
+	if not self.initialized then
+		return;
+	end
+	
 	SexyLootDB.config = SexyLootDB.config or {};
 	SexyLootDB.config.min_quality = value;
 	_G[self:GetName().."Text"]:SetText(string.format("Minimum Quality: %s and above", qualityNames[value + 1]));
@@ -472,11 +510,22 @@ optionsFrame:SetScript("OnShow", function(self)
 				end
 			end
 			
-			-- Display
+			-- Display - mark sliders as not initialized to prevent function calls during SetValue
+			scaleSlider.initialized = false;
+			numToastsSlider.initialized = false;
+			paddingSlider.initialized = false;
+			durationSlider.initialized = false;
+			
 			scaleSlider:SetValue(SexyLootDB.config.scale or 0.75);
 			numToastsSlider:SetValue(SexyLootDB.config.numbuttons or 8);
 			paddingSlider:SetValue(SexyLootDB.config.offset_x or 2);
 			durationSlider:SetValue(SexyLootDB.config.time or 0.3);
+			
+			-- Now mark them as initialized so future changes will work
+			scaleSlider.initialized = true;
+			numToastsSlider.initialized = true;
+			paddingSlider.initialized = true;
+			durationSlider.initialized = true;
 			
 			local growth = SexyLootDB.config.growthDirection or "UP";
 			UIDropDownMenu_SetText(growthDropdown, growth == "DOWN" and "Down" or "Up");
@@ -492,7 +541,9 @@ optionsFrame:SetScript("OnShow", function(self)
 			
 			-- Filters
 			ignoreQualityCheck:SetChecked(SexyLootDB.config.ignore_level);
+			minQualitySlider.initialized = false;
 			minQualitySlider:SetValue(SexyLootDB.config.min_quality or 1);
+			minQualitySlider.initialized = true;
 		end
 	end
 end);
@@ -623,18 +674,37 @@ SlashCmdList["SEXYLOOT"] = function(msg)
 	if msg == "lock" then
 		SexyLootDB.locked = true;
 		print("|cffff69b4SexyLoot:|r Frames locked");
+		if SexyLoot_UpdatePreviewFrame then
+			SexyLoot_UpdatePreviewFrame();
+		else
+			print("SexyLoot Debug: SexyLoot_UpdatePreviewFrame function not found!");
+		end
 	elseif msg == "unlock" then
 		SexyLootDB.locked = false;
 		print("|cffff69b4SexyLoot:|r Frames unlocked - drag to reposition");
-		SexyLoot_ShowTestAlerts();
+		if SexyLoot_UpdatePreviewFrame then
+			SexyLoot_UpdatePreviewFrame();
+		else
+			print("SexyLoot Debug: SexyLoot_UpdatePreviewFrame function not found!");
+		end
 	elseif msg == "test" then
 		SexyLoot_ShowTestAlerts();
+	elseif msg == "preview" then
+		if SexyLoot_UpdatePreviewFrame then
+			print("SexyLoot Debug: Calling preview function manually");
+			SexyLoot_UpdatePreviewFrame();
+		else
+			print("SexyLoot Debug: SexyLoot_UpdatePreviewFrame function not found!");
+		end
 	elseif msg == "reset" then
 		SexyLootDB.positions = nil;
 		SexyLootDB.anchorPoint = nil;
 		SexyLootDB.anchorX = nil;
 		SexyLootDB.anchorY = nil;
 		print("|cffff69b4SexyLoot:|r Positions reset to default");
+		if SexyLoot_UpdatePreviewFrame then
+			SexyLoot_UpdatePreviewFrame();
+		end
 	elseif msg == "config" or msg == "options" or msg == "" then
 		if optionsFrame:IsShown() then
 			optionsFrame:Hide();
@@ -648,5 +718,6 @@ SlashCmdList["SEXYLOOT"] = function(msg)
 		print("  /sl unlock - Unlock frames for dragging");
 		print("  /sl test - Show test alerts");
 		print("  /sl reset - Reset positions to default");
+		print("  /sl preview - Force update preview frame");
 	end
 end;

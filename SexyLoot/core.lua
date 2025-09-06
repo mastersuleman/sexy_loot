@@ -140,6 +140,88 @@ LootAlertFrameMixIn = {};
 LootAlertFrameMixIn.alertQueue = {};
 LootAlertFrameMixIn.alertButton = {};
 
+-- Create preview frame for positioning
+local previewFrame = CreateFrame("Frame", "SexyLootPreviewFrame", UIParent);
+previewFrame:SetSize(306, 70); -- Match typical toast size
+previewFrame:SetFrameStrata("HIGH");
+previewFrame:SetFrameLevel(1000);
+previewFrame:SetMovable(true);
+previewFrame:EnableMouse(true);
+previewFrame:RegisterForDrag("LeftButton");
+previewFrame:Hide();
+
+-- Create the green border
+previewFrame:SetBackdrop({
+	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+	edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+	tile = true,
+	tileSize = 16,
+	edgeSize = 16,
+	insets = { left = 2, right = 2, top = 2, bottom = 2 }
+});
+previewFrame:SetBackdropColor(0, 1, 0, 0.2); -- Semi-transparent green
+previewFrame:SetBackdropBorderColor(0, 1, 0, 0.8); -- Green border
+
+-- Add text label
+previewFrame.text = previewFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal");
+previewFrame.text:SetPoint("CENTER");
+previewFrame.text:SetText("Toast Preview Area\nDrag to reposition");
+previewFrame.text:SetTextColor(0, 1, 0, 1);
+previewFrame.text:SetJustifyH("CENTER");
+
+-- Make preview frame draggable
+previewFrame:SetScript("OnDragStart", function(self)
+	if not SexyLootDB.locked then
+		self:StartMoving();
+	end
+end);
+
+previewFrame:SetScript("OnDragStop", function(self)
+	self:StopMovingOrSizing();
+	if not SexyLootDB.locked then
+		local point, _, relativePoint, x, y = self:GetPoint();
+		-- Save the position for all toasts
+		SexyLootDB.anchorPoint = point;
+		SexyLootDB.anchorX = x;
+		SexyLootDB.anchorY = y;
+		-- Update all visible toasts to new position
+		LootAlertFrameMixIn:AdjustAnchors();
+		-- Update preview frame position
+		SexyLoot_UpdatePreviewFrame();
+	end
+end);
+
+-- Function to show/hide preview frame
+function SexyLoot_UpdatePreviewFrame()
+	if not SexyLootDB then 
+		return;
+	end
+	
+	if SexyLootDB.locked == false then
+		-- Show preview frame at the same position as toasts would appear
+		previewFrame:ClearAllPoints();
+		if SexyLootDB.anchorPoint then
+			previewFrame:SetPoint(SexyLootDB.anchorPoint, UIParent, SexyLootDB.anchorPoint, 
+				SexyLootDB.anchorX or point_x, 
+				SexyLootDB.anchorY or point_y);
+		else
+			-- Default positioning
+			previewFrame:SetPoint("CENTER", UIParent, "CENTER", point_x, point_y);
+		end
+		
+		-- Apply scale from config
+		local alertScale = scale;
+		if SexyLootDB.config and SexyLootDB.config.scale then
+			alertScale = SexyLootDB.config.scale;
+		end
+		previewFrame:SetScale(alertScale);
+		
+		previewFrame:Show();
+	else
+		previewFrame:Hide();
+	end
+end
+
 -- Helper function for container API compatibility
 local function GetContainerNumSlots(bag)
 	if C_Container and C_Container.GetContainerNumSlots then
@@ -771,6 +853,8 @@ function LootAlertButtonTemplate_OnDragStop(self)
 		SexyLootDB.anchorY = y;
 		-- Update all visible toasts to new position
 		LootAlertFrameMixIn:AdjustAnchors();
+		-- Update preview frame position
+		SexyLoot_UpdatePreviewFrame();
 	end
 end
 
@@ -833,7 +917,7 @@ function LootAlertButtonTemplate_OnShow(self)
 		self.LessItemName:SetText(data.name);
 		self.Label:SetText(data.label);
 		self.Label:SetShown(averageToast);
-		self.RollWon:SetShown(data.rollLink);
+		self.RollWon:SetShown(data.rollNumber);
 		self.MoneyLabel:SetShown(moneyToast);
 		self.MoneyLabel:SetText(data.label);
 		self.Amount:SetShown(moneyToast);
@@ -849,14 +933,14 @@ function LootAlertButtonTemplate_OnShow(self)
 		self.LessItemName:SetShown(commonToast);
 		self.LessIcon:SetShown(commonToast);
 		self.LegendaryBackground:SetShown(legendaryToast);
-		self.RollWonTitle:SetShown(data.rollLink);
+		self.RollWonTitle:SetShown(data.rollNumber);
 		self.MoneyBackground:SetShown(moneyToast);
 		self.MoneyIconBorder:SetShown(moneyToast);
 		self.MoneyIcon:SetShown(moneyToast);
 		self.MountToastBackground:SetShown(data.toast == "mounttoast");
 		self.PetToastBackground:SetShown(data.toast == "pettoast");
 		
-		if data.rollLink then
+		if data.rollNumber then
 			if data.rollType == LOOT_ROLL_TYPE_NEED then
 				self.RollWonTitle:SetTexture([[Interface\Buttons\UI-GroupLoot-Dice-Up]]);
 			elseif data.rollType == LOOT_ROLL_TYPE_GREED then
@@ -864,7 +948,7 @@ function LootAlertButtonTemplate_OnShow(self)
 			else
 				self.RollWonTitle:Hide();
 			end
-			self.RollWon:SetText(data.rollLink);
+			self.RollWon:SetText("(" .. data.rollNumber .. ")");
 		end
 
 		if recipeToast then
@@ -1009,8 +1093,23 @@ SLASH_SEXYLOOT1 = "/sexyloot";
 SlashCmdList["SEXYLOOT"] = function(msg)
 	if msg == "test" then
 		SexyLoot_TestLoot();
+	elseif msg == "unlock" then
+		SexyLootDB = SexyLootDB or {};
+		SexyLootDB.locked = false;
+		print("|cffff69b4SexyLoot:|r Frames unlocked - preview should now be visible");
+		SexyLoot_UpdatePreviewFrame();
+	elseif msg == "lock" then
+		SexyLootDB = SexyLootDB or {};
+		SexyLootDB.locked = true;
+		print("|cffff69b4SexyLoot:|r Frames locked - preview hidden");
+		SexyLoot_UpdatePreviewFrame();
+	elseif msg == "preview" then
+		SexyLoot_UpdatePreviewFrame();
 	else
 		print("SexyLoot Commands:");
 		print("/sexyloot test - Test a loot notification");
+		print("/sexyloot unlock - Unlock frames and show preview");
+		print("/sexyloot lock - Lock frames and hide preview");
+		print("/sexyloot preview - Force update preview frame");
 	end
 end
