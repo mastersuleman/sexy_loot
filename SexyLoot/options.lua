@@ -689,6 +689,66 @@ SlashCmdList["SEXYLOOT"] = function(msg)
 		end
 	elseif msg == "test" then
 		SexyLoot_ShowTestAlerts();
+	elseif msg == "testroll" then
+		-- Test greed roll
+		print("SexyLoot: Testing greed roll notification...");
+		if LootAlertFrameMixIn then
+			LootAlertFrameMixIn:AddAlert(
+				"Test Greed Roll",
+				"|cff0070dd|Hitem:25978::::::::70:254::::::|h[Seth's Graphite Fishing Pole]|h|r",
+				3, -- LE_ITEM_QUALITY_RARE
+				"Interface\\Icons\\INV_Fishingpole_03",
+				1,
+				false,
+				YOU_WON_LABEL or "You Won:",
+				"defaulttoast",
+				2, -- LOOT_ROLL_TYPE_GREED
+				87  -- Test roll number
+			);
+			print("SexyLoot: Test greed roll (87) added to queue");
+		else
+			print("SexyLoot: LootAlertFrameMixIn not found!");
+		end
+	elseif msg == "testneed" then
+		-- Test need roll
+		print("SexyLoot: Testing need roll notification...");
+		if LootAlertFrameMixIn then
+			LootAlertFrameMixIn:AddAlert(
+				"Test Need Roll", 
+				"|cffa335ee|Hitem:32837::::::::70:254::::::|h[Warglaive of Azzinoth]|h|r",
+				4, -- LE_ITEM_QUALITY_EPIC
+				"Interface\\Icons\\INV_Weapon_Glaive_01",
+				1,
+				false,
+				YOU_WON_LABEL or "You Won:",
+				"heroictoast",
+				1, -- LOOT_ROLL_TYPE_NEED
+				95  -- Test roll number
+			);
+			print("SexyLoot: Test need roll (95) added to queue");
+		else
+			print("SexyLoot: LootAlertFrameMixIn not found!");
+		end
+	elseif msg == "testde" then
+		-- Test disenchant roll
+		print("SexyLoot: Testing disenchant roll notification...");
+		if LootAlertFrameMixIn then
+			LootAlertFrameMixIn:AddAlert(
+				"Test DE Roll", 
+				"|cff1eff00|Hitem:14551::::::::70:254::::::|h[Edged Bastard Sword]|h|r",
+				2, -- LE_ITEM_QUALITY_UNCOMMON
+				"Interface\\Icons\\INV_Sword_25",
+				1,
+				false,
+				YOU_WON_LABEL or "You Won:",
+				"defaulttoast",
+				3, -- LOOT_ROLL_TYPE_DISENCHANT
+				73  -- Test roll number
+			);
+			print("SexyLoot: Test disenchant roll (73) added to queue");
+		else
+			print("SexyLoot: LootAlertFrameMixIn not found!");
+		end
 	elseif msg == "preview" then
 		if SexyLoot_UpdatePreviewFrame then
 			print("SexyLoot Debug: Calling preview function manually");
@@ -717,6 +777,9 @@ SlashCmdList["SEXYLOOT"] = function(msg)
 		print("  /sl lock - Lock frames");
 		print("  /sl unlock - Unlock frames for dragging");
 		print("  /sl test - Show test alerts");
+		print("  /sl testroll - Test greed roll with number (87)");
+		print("  /sl testneed - Test need roll with number (95)");
+		print("  /sl testde - Test disenchant roll with number (73)");
 		print("  /sl reset - Reset positions to default");
 		print("  /sl preview - Force update preview frame");
 	end
