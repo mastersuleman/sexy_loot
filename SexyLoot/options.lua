@@ -4,6 +4,13 @@
 
 local _, private = ...;
 
+-- Define UpdatePreviewFrame to prevent errors (simple stub)
+function UpdatePreviewFrame()
+	if SexyLoot_UpdatePreviewFrame then
+		SexyLoot_UpdatePreviewFrame();
+	end
+end
+
 -- Create the main options frame
 local optionsFrame = CreateFrame("Frame", "SexyLootOptionsFrame", UIParent);
 optionsFrame:SetSize(600, 500);
@@ -108,6 +115,23 @@ tabContent[1]:SetAllPoints();
 
 local generalY = -20;
 
+-- Test preview button (temporary for debugging)
+local previewTestButton = CreateFrame("Button", nil, tabContent[1], "UIPanelButtonTemplate");
+previewTestButton:SetPoint("TOPLEFT", 350, generalY - 80);
+previewTestButton:SetSize(120, 22);
+previewTestButton:SetText("Toggle Preview");
+previewTestButton:SetScript("OnClick", function()
+	if not SexyLootDB then SexyLootDB = {}; end
+	SexyLootDB.locked = not SexyLootDB.locked;
+	print("TEST BUTTON: locked =", SexyLootDB.locked);
+	if UpdatePreviewFrame then
+		print("TEST BUTTON: Calling UpdatePreviewFrame");
+		UpdatePreviewFrame();
+	else
+		print("TEST BUTTON: UpdatePreviewFrame not found");
+	end
+end);
+
 -- Lock/Unlock checkbox
 local lockCheck = CreateFrame("CheckButton", "SexyLootLockCheck", tabContent[1], "UICheckButtonTemplate");
 lockCheck:SetPoint("TOPLEFT", 20, generalY);
@@ -118,7 +142,12 @@ lockCheck:SetScript("OnClick", function(self)
 		print("|cffff69b4SexyLoot:|r Frames locked");
 	else
 		print("|cffff69b4SexyLoot:|r Frames unlocked - drag to reposition");
-		SexyLoot_ShowTestAlerts();
+	end
+	-- Update preview frame visibility
+	if SexyLoot_UpdatePreviewFrame then
+		SexyLoot_UpdatePreviewFrame();
+	else
+		print("SexyLoot Debug: Preview function not available from checkbox");
 	end
 end);
 
@@ -145,6 +174,8 @@ resetButton:SetScript("OnClick", function()
 	if LootAlertFrameMixIn then
 		LootAlertFrameMixIn:AdjustAnchors();
 	end
+	-- Update preview frame position
+	SexyLoot_UpdatePreviewFrame();
 end);
 
 generalY = generalY - 40;
@@ -272,6 +303,8 @@ scaleSlider:SetScript("OnValueChanged", function(self, value)
 	SexyLootDB.config = SexyLootDB.config or {};
 	SexyLootDB.config.scale = value;
 	_G[self:GetName().."Text"]:SetText(string.format("Alert Scale: %.2f", value));
+	-- Update preview frame scale if visible
+	UpdatePreviewFrame();
 end);
 
 displayY = displayY - 60;
@@ -429,6 +462,11 @@ _G[minQualitySlider:GetName().."Text"]:SetText("Minimum Quality to Show");
 _G[minQualitySlider:GetName().."Low"]:SetText("Poor");
 _G[minQualitySlider:GetName().."High"]:SetText("Legendary");
 minQualitySlider:SetScript("OnValueChanged", function(self, value)
+	-- Don't do anything if this is being called during initialization
+	if not self.initialized then
+		return;
+	end
+	
 	SexyLootDB.config = SexyLootDB.config or {};
 	SexyLootDB.config.min_quality = value;
 	_G[self:GetName().."Text"]:SetText(string.format("Minimum Quality: %s and above", qualityNames[value + 1]));
@@ -472,11 +510,22 @@ optionsFrame:SetScript("OnShow", function(self)
 				end
 			end
 			
-			-- Display
+			-- Display - mark sliders as not initialized to prevent function calls during SetValue
+			scaleSlider.initialized = false;
+			numToastsSlider.initialized = false;
+			paddingSlider.initialized = false;
+			durationSlider.initialized = false;
+			
 			scaleSlider:SetValue(SexyLootDB.config.scale or 0.75);
 			numToastsSlider:SetValue(SexyLootDB.config.numbuttons or 8);
 			paddingSlider:SetValue(SexyLootDB.config.offset_x or 2);
 			durationSlider:SetValue(SexyLootDB.config.time or 0.3);
+			
+			-- Now mark them as initialized so future changes will work
+			scaleSlider.initialized = true;
+			numToastsSlider.initialized = true;
+			paddingSlider.initialized = true;
+			durationSlider.initialized = true;
 			
 			local growth = SexyLootDB.config.growthDirection or "UP";
 			UIDropDownMenu_SetText(growthDropdown, growth == "DOWN" and "Down" or "Up");
@@ -492,7 +541,9 @@ optionsFrame:SetScript("OnShow", function(self)
 			
 			-- Filters
 			ignoreQualityCheck:SetChecked(SexyLootDB.config.ignore_level);
+			minQualitySlider.initialized = false;
 			minQualitySlider:SetValue(SexyLootDB.config.min_quality or 1);
+			minQualitySlider.initialized = true;
 		end
 	end
 end);
@@ -623,18 +674,97 @@ SlashCmdList["SEXYLOOT"] = function(msg)
 	if msg == "lock" then
 		SexyLootDB.locked = true;
 		print("|cffff69b4SexyLoot:|r Frames locked");
+		if SexyLoot_UpdatePreviewFrame then
+			SexyLoot_UpdatePreviewFrame();
+		else
+			print("SexyLoot Debug: SexyLoot_UpdatePreviewFrame function not found!");
+		end
 	elseif msg == "unlock" then
 		SexyLootDB.locked = false;
 		print("|cffff69b4SexyLoot:|r Frames unlocked - drag to reposition");
-		SexyLoot_ShowTestAlerts();
+		if SexyLoot_UpdatePreviewFrame then
+			SexyLoot_UpdatePreviewFrame();
+		else
+			print("SexyLoot Debug: SexyLoot_UpdatePreviewFrame function not found!");
+		end
 	elseif msg == "test" then
 		SexyLoot_ShowTestAlerts();
+	elseif msg == "testroll" then
+		-- Test greed roll
+		print("SexyLoot: Testing greed roll notification...");
+		if LootAlertFrameMixIn then
+			LootAlertFrameMixIn:AddAlert(
+				"Test Greed Roll",
+				"|cff0070dd|Hitem:25978::::::::70:254::::::|h[Seth's Graphite Fishing Pole]|h|r",
+				3, -- LE_ITEM_QUALITY_RARE
+				"Interface\\Icons\\INV_Fishingpole_03",
+				1,
+				false,
+				YOU_WON_LABEL or "You Won:",
+				"defaulttoast",
+				2, -- LOOT_ROLL_TYPE_GREED
+				87  -- Test roll number
+			);
+			print("SexyLoot: Test greed roll (87) added to queue");
+		else
+			print("SexyLoot: LootAlertFrameMixIn not found!");
+		end
+	elseif msg == "testneed" then
+		-- Test need roll
+		print("SexyLoot: Testing need roll notification...");
+		if LootAlertFrameMixIn then
+			LootAlertFrameMixIn:AddAlert(
+				"Test Need Roll", 
+				"|cffa335ee|Hitem:32837::::::::70:254::::::|h[Warglaive of Azzinoth]|h|r",
+				4, -- LE_ITEM_QUALITY_EPIC
+				"Interface\\Icons\\INV_Weapon_Glaive_01",
+				1,
+				false,
+				YOU_WON_LABEL or "You Won:",
+				"heroictoast",
+				1, -- LOOT_ROLL_TYPE_NEED
+				95  -- Test roll number
+			);
+			print("SexyLoot: Test need roll (95) added to queue");
+		else
+			print("SexyLoot: LootAlertFrameMixIn not found!");
+		end
+	elseif msg == "testde" then
+		-- Test disenchant roll
+		print("SexyLoot: Testing disenchant roll notification...");
+		if LootAlertFrameMixIn then
+			LootAlertFrameMixIn:AddAlert(
+				"Test DE Roll", 
+				"|cff1eff00|Hitem:14551::::::::70:254::::::|h[Edged Bastard Sword]|h|r",
+				2, -- LE_ITEM_QUALITY_UNCOMMON
+				"Interface\\Icons\\INV_Sword_25",
+				1,
+				false,
+				YOU_WON_LABEL or "You Won:",
+				"defaulttoast",
+				3, -- LOOT_ROLL_TYPE_DISENCHANT
+				73  -- Test roll number
+			);
+			print("SexyLoot: Test disenchant roll (73) added to queue");
+		else
+			print("SexyLoot: LootAlertFrameMixIn not found!");
+		end
+	elseif msg == "preview" then
+		if SexyLoot_UpdatePreviewFrame then
+			print("SexyLoot Debug: Calling preview function manually");
+			SexyLoot_UpdatePreviewFrame();
+		else
+			print("SexyLoot Debug: SexyLoot_UpdatePreviewFrame function not found!");
+		end
 	elseif msg == "reset" then
 		SexyLootDB.positions = nil;
 		SexyLootDB.anchorPoint = nil;
 		SexyLootDB.anchorX = nil;
 		SexyLootDB.anchorY = nil;
 		print("|cffff69b4SexyLoot:|r Positions reset to default");
+		if SexyLoot_UpdatePreviewFrame then
+			SexyLoot_UpdatePreviewFrame();
+		end
 	elseif msg == "config" or msg == "options" or msg == "" then
 		if optionsFrame:IsShown() then
 			optionsFrame:Hide();
@@ -647,6 +777,10 @@ SlashCmdList["SEXYLOOT"] = function(msg)
 		print("  /sl lock - Lock frames");
 		print("  /sl unlock - Unlock frames for dragging");
 		print("  /sl test - Show test alerts");
+		print("  /sl testroll - Test greed roll with number (87)");
+		print("  /sl testneed - Test need roll with number (95)");
+		print("  /sl testde - Test disenchant roll with number (73)");
 		print("  /sl reset - Reset positions to default");
+		print("  /sl preview - Force update preview frame");
 	end
 end;
