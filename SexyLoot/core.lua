@@ -251,7 +251,6 @@ local function GetContainerItemInfo(bag, slot)
 	end
 end
 
--- Add test function
 function SexyLoot_TestLoot()
 	print("SexyLoot: Testing loot notification...");
 	if LootAlertFrameMixIn then
@@ -271,7 +270,7 @@ function SexyLoot_TestLoot()
 	end
 end
 
-function LootAlertFrameMixIn:AddAlert(name, link, quality, texture, count, ignore, label, toast, rollType, rollLink, tip, money, subType, isLoss)
+function LootAlertFrameMixIn:AddAlert(name, link, quality, texture, count, ignore, label, toast, rollType, rollNumber, tip, money, subType, isLoss)
 	-- Load saved config and apply quality filter
 	if SexyLootDB and SexyLootDB.config then
 		ignlevel = SexyLootDB.config.ignore_level or ignlevel;
@@ -295,7 +294,7 @@ function LootAlertFrameMixIn:AddAlert(name, link, quality, texture, count, ignor
 		label 		= label,
 		toast 		= toast,
 		rollType 	= rollType,
-		rollLink 	= rollLink,
+		rollNumber 	= rollNumber,
 		tip 		= tip,
 		money		= money,
 		subType 	= subType,
@@ -361,6 +360,16 @@ function LootAlertFrameMixIn:AdjustAnchors()
 end
 
 function LootAlertFrame_OnLoad(self)
+	-- Debug: Check if pattern variables exist
+	print("SexyLoot Debug: Checking pattern variables:");
+	print("LOOT_ROLL_YOU_WON_NO_SPAM_NEED:", tostring(LOOT_ROLL_YOU_WON_NO_SPAM_NEED));
+	print("LOOT_ROLL_YOU_WON_NO_SPAM_GREED:", tostring(LOOT_ROLL_YOU_WON_NO_SPAM_GREED));
+	print("LOOT_ROLL_YOU_WON_NO_SPAM_DE:", tostring(LOOT_ROLL_YOU_WON_NO_SPAM_DE));
+	print("LOOT_ROLL_ROLLED_NEED:", tostring(LOOT_ROLL_ROLLED_NEED));
+	print("LOOT_ROLL_ROLLED_GREED:", tostring(LOOT_ROLL_ROLLED_GREED));
+	print("LOOT_ROLL_ROLLED_DE:", tostring(LOOT_ROLL_ROLLED_DE));
+	print("LOOT_ROLL_YOU_WON:", tostring(LOOT_ROLL_YOU_WON));
+	
 	-- Load config from saved variables
 	if SexyLootDB and SexyLootDB.config then
 		uptime = SexyLootDB.config.time or uptime;
@@ -403,14 +412,9 @@ local function LootAlertFrame_HandleChatMessage(message)
 	local link, quantity, rollType, roll;
 
 	if expectations_list.disenchant_result then
-		local success1, l1, q1 = pcall(string.match, message, P_LOOT_ITEM_SELF_MULTIPLE);
-		if success1 and l1 then
-			link, quantity = l1, q1;
-		else
-			local success2, l2 = pcall(string.match, message, P_LOOT_ITEM_SELF);
-			if success2 and l2 then
-				link = l2;
-			end
+		link, quantity = message:cmatch(LOOT_ITEM_SELF_MULTIPLE);
+		if not link then
+			link = message:cmatch(LOOT_ITEM_SELF);
 		end
 		if link and expectations_list[link] then
 			rollType = LOOT_ROLL_TYPE_DISENCHANT;
@@ -421,10 +425,7 @@ local function LootAlertFrame_HandleChatMessage(message)
 		end
 	end
 
-	local success, l = pcall(string.match, message, P_LOOT_ROLL_YOU_WON);
-	if success and l then
-		link = l;
-	end
+	link = message:cmatch(LOOT_ROLL_YOU_WON)
 	if link and expectations_list[link] then
 		rollType, roll = expectations_list[link][1], expectations_list[link][2];
 		if rollType == LOOT_ROLL_TYPE_DISENCHANT then
@@ -436,18 +437,18 @@ local function LootAlertFrame_HandleChatMessage(message)
 		end
 	end
 
-	for rType, pattern in pairs(patterns.rolled) do
-		local success, r, l, player = pcall(string.match, message, pattern);
-		if success and r and l and player and player == playerName then
-			expectations_list[l] = {rType, r};
+	for rollType, pattern in pairs(patterns.rolled) do
+		local roll, link, player = message:cmatch(pattern);
+		if roll and player == playerName then
+			expectations_list[link] = {rollType, roll};
 			return;
 		end
 	end
 
-	for rType, pattern in pairs(patterns.won) do
-		local success, r, l = pcall(string.match, message, pattern);
-		if success and r and l then
-			return l, 1, rType, r;
+	for rollType, pattern in pairs(patterns.won) do
+		local roll, link = message:cmatch(pattern);
+		if roll then
+			return link, 1, rollType, roll;
 		end
 	end
   
@@ -493,6 +494,7 @@ function LootAlertFrame_OnEvent(self, event, ...)
 			elseif itemRoll then
 				itemName 	= itemRoll;
 				label 		= YOU_WON_LABEL;
+				count 		= rollQuantity or count;
 			end
 			player = GetUnitName("player");
 		end
@@ -616,20 +618,15 @@ function LootAlertFrame_OnEvent(self, event, ...)
 		end
 	end
 	
-	-- Mail tracking - track items as they're taken from mail
+	-- Mail tracking
 	if event == "MAIL_INBOX_UPDATE" then
 		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.mail == false then return; end
 		
-		-- Only set mailbox flag if we can actually interact with mail
-		-- Check if mail frame is open and visible
 		if MailFrame and MailFrame:IsShown() then
 			if not self.atMailbox then
 				self.atMailbox = true;
-				-- Take a snapshot of current bag contents when we open mail
-				-- ONLY track regular inventory bags (0-4), not special bags like keyring
 				self.mailSnapshot = {};
 				for bag = 0, 4 do
-					-- Skip if bag doesn't exist or has no slots
 					local numSlots = GetContainerNumSlots(bag);
 					if numSlots and numSlots > 0 then
 						self.mailSnapshot[bag] = {};
@@ -651,30 +648,24 @@ function LootAlertFrame_OnEvent(self, event, ...)
 				end
 			end
 		else
-			-- Mail frame is not open, clear the flag
 			self.atMailbox = false;
 			self.mailSnapshot = nil;
 		end
 	end
 
 	if event == "MAIL_CLOSED" then
-		-- Clear mailbox flag and snapshot
 		self.atMailbox = false;
 		self.mailSnapshot = nil;
 	end
 
-	-- Also clear the flag when UI is hidden (player moves away, etc.)
 	if event == "MAIL_SHOW" then
-		-- This fires when mail UI is opened
 		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.mail == false then return; end
-		-- Don't set flag here, let MAIL_INBOX_UPDATE handle it
 	end
 
 	-- Track bag updates while at mailbox
 	if event == "BAG_UPDATE" and self.atMailbox and self.mailSnapshot then
 		if SexyLootDB and SexyLootDB.config and SexyLootDB.config.mail == false then return; end
 		
-		-- Double-check that we're still at a mailbox
 		if not (MailFrame and MailFrame:IsShown()) then
 			self.atMailbox = false;
 			self.mailSnapshot = nil;
@@ -682,18 +673,14 @@ function LootAlertFrame_OnEvent(self, event, ...)
 		end
 		
 		local bag = arg1;
-		
-		-- ONLY process regular inventory bags (0-4), skip special bags
 		if bag < 0 or bag > 4 then
 			return;
 		end
 		
-		-- Skip if this bag wasn't in our snapshot (shouldn't happen with 0-4, but safety check)
 		if not self.mailSnapshot[bag] then
 			return;
 		end
 		
-		-- Check each slot in the updated bag
 		local numSlots = GetContainerNumSlots(bag);
 		if not numSlots or numSlots == 0 then
 			return;
@@ -710,7 +697,6 @@ function LootAlertFrame_OnEvent(self, event, ...)
 					local wasInSnapshot = false;
 					local oldCount = 0;
 					
-					-- Check if this exact slot had this item in snapshot
 					if self.mailSnapshot[bag][slot] then
 						local snapshotData = self.mailSnapshot[bag][slot];
 						if snapshotData.itemID == itemID then
@@ -719,9 +705,7 @@ function LootAlertFrame_OnEvent(self, event, ...)
 						end
 					end
 					
-					-- If item wasn't in this slot, or count increased, it might be from mail
 					if not wasInSnapshot then
-						-- New item in this slot - check if it exists elsewhere in snapshot
 						local foundElsewhere = false;
 						for snapBag = 0, 4 do
 							if self.mailSnapshot[snapBag] then
@@ -739,7 +723,6 @@ function LootAlertFrame_OnEvent(self, event, ...)
 							if foundElsewhere then break; end
 						end
 						
-						-- If it's truly new (not found anywhere in snapshot), it's from mail
 						if not foundElsewhere then
 							local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link);
 							if name then
@@ -749,7 +732,6 @@ function LootAlertFrame_OnEvent(self, event, ...)
 							end
 						end
 					elseif count > oldCount then
-						-- Same item, but count increased - show the difference
 						local addedCount = count - oldCount;
 						local name, _, quality, _, _, _, _, _, _, texture = GetItemInfo(link);
 						if name then
@@ -762,7 +744,6 @@ function LootAlertFrame_OnEvent(self, event, ...)
 			end
 		end
 		
-		-- Update the snapshot for this bag
 		for slot = 1, numSlots do
 			local link = GetContainerItemLink(bag, slot);
 			if link then
@@ -783,7 +764,6 @@ function LootAlertFrame_OnEvent(self, event, ...)
 end
 
 function LootAlertFrame_OnUpdate(self, elapsed)
-	-- Get current update time from config
 	local updateSpeed = uptime;
 	if SexyLootDB and SexyLootDB.config and SexyLootDB.config.time then
 		updateSpeed = SexyLootDB.config.time;
@@ -791,7 +771,6 @@ function LootAlertFrame_OnUpdate(self, elapsed)
 	
 	self.updateTime = self.updateTime - elapsed;
 	
-	-- Handle delayed money updates
 	if self.moneyUpdateTimer > 0 then
 		self.moneyUpdateTimer = self.moneyUpdateTimer - elapsed;
 		if self.moneyUpdateTimer <= 0 then
@@ -799,7 +778,6 @@ function LootAlertFrame_OnUpdate(self, elapsed)
 			local diff = currentMoney - previousMoney;
 			
 			if diff < 0 and SexyLootDB and SexyLootDB.config and SexyLootDB.config.money ~= false then
-				-- Money loss
 				local amount = GetMoneyString(math.abs(diff), true);
 				local label = "You spent:";
 				local quality = LE_ITEM_QUALITY_POOR;
@@ -814,7 +792,6 @@ function LootAlertFrame_OnUpdate(self, elapsed)
 	if self.updateTime <= 0 then
 		local alert = LootAlertFrameMixIn:CreateAlert();
 		if alert then
-			-- Load saved scale
 			local alertScale = scale;
 			if SexyLootDB and SexyLootDB.config and SexyLootDB.config.scale then
 				alertScale = SexyLootDB.config.scale;
@@ -847,18 +824,14 @@ function LootAlertButtonTemplate_OnDragStop(self)
 	self:StopMovingOrSizing();
 	if not SexyLootDB.locked then
 		local point, _, relativePoint, x, y = self:GetPoint();
-		-- Save the position for all toasts (they all use the same anchor)
 		SexyLootDB.anchorPoint = point;
 		SexyLootDB.anchorX = x;
 		SexyLootDB.anchorY = y;
-		-- Update all visible toasts to new position
 		LootAlertFrameMixIn:AdjustAnchors();
-		-- Update preview frame position
 		SexyLoot_UpdatePreviewFrame();
 	end
 end
 
--- NewRecipeLearnedAlertFrame
 local function NewRecipeLearnedAlertFrame_GetStarTextureFromRank(quality)
 	if quality == 2 then
 		return "|T"..assets.."toast-star:12:12:0:0:32:32:0:21:0:21|t";
@@ -876,7 +849,6 @@ function LootAlertButtonTemplate_OnShow(self)
 		return;
 	end
 
-	-- Set frame strata from config
 	local frameStrata = "MEDIUM";
 	if SexyLootDB and SexyLootDB.config and SexyLootDB.config.frameStrata then
 		frameStrata = SexyLootDB.config.frameStrata;
@@ -885,13 +857,13 @@ function LootAlertButtonTemplate_OnShow(self)
 
 	local data = self.data;
 	if data.name then
-		local defaultToast 		= data.toast == "defaulttoast";
-		local recipeToast 		= data.toast == "recipetoast";
-		local moneyToast 		= data.toast == "moneytoast";
-		local legendaryToast 	= data.toast == "legendarytoast";
-		local commonToast 		= data.toast == "commontoast";
-		local qualityColor 		= ITEM_QUALITY_COLORS[data.quality] or nil;
-		local averageToast		= not recipeToast and not moneyToast and not commonToast;
+		local defaultToast = data.toast == "defaulttoast";
+		local recipeToast = data.toast == "recipetoast";
+		local moneyToast = data.toast == "moneytoast";
+		local legendaryToast = data.toast == "legendarytoast";
+		local commonToast = data.toast == "commontoast";
+		local qualityColor = ITEM_QUALITY_COLORS[data.quality] or nil;
+		local averageToast = not recipeToast and not moneyToast and not commonToast;
 	
 		if data.count then
 			self.Count:SetText(data.count);
@@ -899,12 +871,11 @@ function LootAlertButtonTemplate_OnShow(self)
 			self.Count:SetText(" ");
 		end
 
-		-- Set label color based on gain/loss
 		if data.isLoss then
-			self.Label:SetTextColor(1, 0.2, 0.2); -- Red for losses
+			self.Label:SetTextColor(1, 0.2, 0.2);
 			self.MoneyLabel:SetTextColor(1, 0.2, 0.2);
 		else
-			self.Label:SetTextColor(1, 1, 1); -- White for gains
+			self.Label:SetTextColor(1, 1, 1);
 			self.MoneyLabel:SetTextColor(1, 1, 1);
 		end
 
@@ -945,6 +916,8 @@ function LootAlertButtonTemplate_OnShow(self)
 				self.RollWonTitle:SetTexture([[Interface\Buttons\UI-GroupLoot-Dice-Up]]);
 			elseif data.rollType == LOOT_ROLL_TYPE_GREED then
 				self.RollWonTitle:SetTexture([[Interface\Buttons\UI-GroupLoot-Coin-Up]]);
+			elseif data.rollType == LOOT_ROLL_TYPE_DISENCHANT then
+				self.RollWonTitle:SetTexture([[Interface\Buttons\UI-GroupLoot-DE-Up]]);
 			else
 				self.RollWonTitle:Hide();
 			end
@@ -975,7 +948,6 @@ function LootAlertButtonTemplate_OnShow(self)
 			self.IconBorder:SetTexCoord(unpack(LOOT_BORDER_BY_QUALITY[data.quality]));
 		end
 		
-		-- Load sound settings
 		local soundEnabled = true;
 		local useCoinSound = false;
 		if SexyLootDB and SexyLootDB.config then
@@ -984,7 +956,6 @@ function LootAlertButtonTemplate_OnShow(self)
 		end
 		
 		if soundEnabled then
-			-- Only play coin sound for gains, not losses
 			if moneyToast and useCoinSound and not data.isLoss then
 				PlaySoundFile(SOUNDKIT.COIN_SOUND);
 			elseif legendaryToast then
@@ -994,12 +965,10 @@ function LootAlertButtonTemplate_OnShow(self)
 			elseif recipeToast then
 				PlaySoundFile(SOUNDKIT.UI_GARRISON_FOLLOWER_LEARN_TRAIT);
 			elseif not (moneyToast and data.isLoss) then
-				-- Don't play epic sound for money losses
 				PlaySoundFile(SOUNDKIT.UI_EPICLOOT_TOAST);
 			end
 		end
 		
-		-- Load animation settings
 		local animsEnabled = true;
 		if SexyLootDB and SexyLootDB.config then
 			animsEnabled = SexyLootDB.config.anims ~= false;
@@ -1018,15 +987,14 @@ function LootAlertButtonTemplate_OnShow(self)
 			end
 		end
 		
-		self.hyperLink 		= data.link;
-		self.tip 			= data.tip;
-		self.name 			= data.name;
-		self.money			= data.money;
+		self.hyperLink = data.link;
+		self.tip = data.tip;
+		self.name = data.name;
+		self.money = data.money;
 	end
 end
 
 function LootAlertButtonTemplate_OnHide(self)
-	-- Stop all animations first
 	self.animIn:Stop();
 	self.waitAndAnimOut:Stop();
 	
@@ -1048,15 +1016,11 @@ function LootAlertButtonTemplate_OnHide(self)
 		end
 	end
 
-	-- Clear data
 	if self.data then
 		tWipe(self.data);
 	end
 	
-	-- Hide the frame
 	self:Hide();
-	
-	-- Readjust anchors after hiding
 	LootAlertFrameMixIn:AdjustAnchors();
 end
 
@@ -1088,11 +1052,29 @@ function LootAlertButtonTemplate_OnLeave(self)
 	GameTooltip:Hide();
 end
 
--- Slash command for testing
 SLASH_SEXYLOOT1 = "/sexyloot";
 SlashCmdList["SEXYLOOT"] = function(msg)
 	if msg == "test" then
 		SexyLoot_TestLoot();
+	elseif msg == "testroll" then
+		print("SexyLoot: Testing roll notification...");
+		if LootAlertFrameMixIn then
+			LootAlertFrameMixIn:AddAlert(
+				"Test Roll Item",
+				"|cff0070dd|Hitem:25978::::::::70:254::::::|h[Seth's Graphite Fishing Pole]|h|r",
+				LE_ITEM_QUALITY_RARE,
+				"Interface\\Icons\\INV_Fishingpole_03",
+				1,
+				false,
+				YOU_WON_LABEL,
+				"defaulttoast",
+				LOOT_ROLL_TYPE_GREED,
+				87
+			);
+			print("SexyLoot: Test roll notification added to queue");
+		else
+			print("SexyLoot: LootAlertFrameMixIn not found!");
+		end
 	elseif msg == "unlock" then
 		SexyLootDB = SexyLootDB or {};
 		SexyLootDB.locked = false;
@@ -1108,6 +1090,7 @@ SlashCmdList["SEXYLOOT"] = function(msg)
 	else
 		print("SexyLoot Commands:");
 		print("/sexyloot test - Test a loot notification");
+		print("/sexyloot testroll - Test a roll notification with number");
 		print("/sexyloot unlock - Unlock frames and show preview");
 		print("/sexyloot lock - Lock frames and hide preview");
 		print("/sexyloot preview - Force update preview frame");
